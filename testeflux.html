@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>FluxShift - CCTP Bridge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fadeIn { animation: fadeIn 0.5s ease-out; }
+        
+        /* Institutional gradient background - dark top to purple bottom */
+        .bg-institutional {
+            background: linear-gradient(180deg, 
+                #0a0a0f 0%, 
+                #0d0d1a 15%,
+                #12122a 35%,
+                #1a1a3e 55%,
+                #252552 75%,
+                #2d2d5a 100%
+            );
+            min-height: 100vh;
+        }
+        
+        .tab-active { background: linear-gradient(to right,#9333ea,#6366f1); color: white; }
+        .mono-pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace; font-size: 12px; white-space: pre-wrap; }
+        .font-tech { font-family: 'Orbitron', sans-serif; }
+        .font-body { font-family: 'Inter', sans-serif; }
+        
+        /* FLUXSHIFT Neon Logo */
+        .flux-cyan {
+            color: #00d4ff;
+            text-shadow: 0 0 10px #00d4ff, 0 0 20px #00d4ff, 0 0 30px #00d4ff, 0 0 40px #00d4ff;
+        }
+        .flux-magenta {
+            color: #d946ef;
+            text-shadow: 0 0 10px #d946ef, 0 0 20px #d946ef, 0 0 30px #d946ef, 0 0 40px #d946ef;
+        }
+        .fluxshift-line {
+            background: linear-gradient(90deg, #00d4ff 0%, #d946ef 100%);
+            box-shadow: 0 0 10px #00d4ff, 0 0 20px #d946ef;
+        }
+        @keyframes fluxPulse {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; }
+        }
+        .fluxshift-logo {
+            animation: fluxPulse 3s ease-in-out infinite;
+        }
+        
+        @keyframes glow { 
+            0%, 100% { text-shadow: 0 0 20px rgba(147, 51, 234, 0.4), 0 0 40px rgba(99, 102, 241, 0.2); } 
+            50% { text-shadow: 0 0 30px rgba(147, 51, 234, 0.6), 0 0 60px rgba(99, 102, 241, 0.4); } 
+        }
+        .text-glow { animation: glow 4s ease-in-out infinite; }
+        
+        /* Particle animation */
+        @keyframes float-particle {
+            0%, 100% { transform: translateY(0) translateX(0); opacity: 0; }
+            10% { opacity: 0.6; }
+            90% { opacity: 0.6; }
+            100% { transform: translateY(-100vh) translateX(20px); opacity: 0; }
+        }
+        
+        .particle {
+            position: fixed;
+            width: 2px;
+            height: 2px;
+            background: rgba(147, 51, 234, 0.6);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: float-particle linear infinite;
+        }
+        
+        /* Support card hover effect */
+        .support-card {
+            transition: all 0.3s ease;
+            border: 1px solid rgba(147, 51, 234, 0.2);
+        }
+        .support-card:hover {
+            border-color: rgba(147, 51, 234, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(147, 51, 234, 0.15);
+        }
+    </style>
+</head>
+<body class="bg-institutional font-body">
+    <!-- Particles container -->
+    <div id="particles" class="fixed inset-0 overflow-hidden pointer-events-none z-0"></div>
+    
+    <!-- Subtle gradient overlays -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div class="absolute top-0 left-1/4 w-[600px] h-[600px] bg-purple-900/10 rounded-full filter blur-[120px]"></div>
+        <div class="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-indigo-900/15 rounded-full filter blur-[100px]"></div>
+    </div>
+
+    <div class="max-w-7xl mx-auto relative z-10 p-4 md:p-6">
+        
+        <!-- Wallet indicator (top right) -->
+        <div id="walletIndicator" class="hidden fixed top-4 right-4 z-50">
+            <div class="flex items-center gap-2 px-3 py-2 bg-slate-900/90 backdrop-blur-sm rounded-full border border-purple-500/30">
+                <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                <span id="walletShort" class="text-gray-300 text-xs font-mono"></span>
+            </div>
+        </div>
+
+        <!-- FLUXSHIFT Logo - Top Left -->
+        <div class="fixed top-4 left-4 z-50">
+            <h1 class="text-xl md:text-2xl font-tech font-bold tracking-wider fluxshift-logo">
+                <span class="flux-cyan">FLUX</span><span class="flux-magenta">SHIFT</span>
+            </h1>
+            <div class="h-0.5 w-full mt-1 fluxshift-line"></div>
+        </div>
+
+        <!-- Main content centered vertically -->
+        <div class="min-h-screen flex flex-col justify-center py-20">
+            <div class="mb-8 flex gap-4 justify-center">
+                <button id="trackerTab" class="tab-active px-8 py-4 rounded-xl font-semibold transition-all"> Tracker</button>
+                <button id="bridgeTab" class="px-8 py-4 rounded-xl font-semibold bg-white/5 text-white border border-white/10 hover:bg-white/10 transition-all"> Bridge CCTP</button>
+            </div>
+
+
+            <!-- Tracker section -->
+            <div id="trackerSection">
+                <div class="mb-6 backdrop-blur-xl bg-white/5 rounded-2xl p-6 border border-white/10 shadow-2xl">
+                    <div class="flex gap-3">
+                        <input id="addressInput" type="text" placeholder="Enter address (0x...)" class="flex-1 px-6 py-4 bg-slate-900/50 border border-purple-500/20 rounded-xl text-white placeholder-gray-500 focus:border-purple-500/50 focus:outline-none transition-all"/>
+                        <button id="searchBtn" class="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-semibold hover:opacity-90 transition-all">Search</button>
+                </div>
+                <div id="errorBox" class="mt-4 hidden items-center gap-2 text-red-400 bg-red-500/10 p-3 rounded-lg border border-red-500/30">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span id="errorText"></span>
+                </div>
+            </div>
+
+            <!-- Support Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <a href="https://faucet.circle.com/?utm_source=Blockscout" target="_blank" class="support-card bg-slate-900/40 backdrop-blur-sm rounded-xl p-4 flex items-center gap-4 cursor-pointer">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/20 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="text-white font-medium text-sm">Faucet Tokens</p>
+                        <p class="text-gray-500 text-xs">Get testnet USDC</p>
+                    </div>
+                    <svg class="w-4 h-4 text-gray-600 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                </a>
+                
+                <a href="https://infinityname.com/?utm_source=Blockscout" target="_blank" class="support-card bg-slate-900/40 backdrop-blur-sm rounded-xl p-4 flex items-center gap-4 cursor-pointer">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-600/20 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="text-white font-medium text-sm">Domains</p>
+                        <p class="text-gray-500 text-xs">Register your .arc name</p>
+                    </div>
+                    <svg class="w-4 h-4 text-gray-600 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                </a>
+                
+                <a href="https://app.synthra.org/?utm_source=Blockscout#/swap" target="_blank" class="support-card bg-slate-900/40 backdrop-blur-sm rounded-xl p-4 flex items-center gap-4 cursor-pointer">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500/20 to-emerald-600/20 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="text-white font-medium text-sm">DEX</p>
+                        <p class="text-gray-500 text-xs">Swap tokens on Synthra</p>
+                    </div>
+                    <svg class="w-4 h-4 text-gray-600 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                </a>
+            </div>
+
+            <div id="loadingBox" class="hidden text-center py-12">
+                <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-purple-500 border-t-transparent"></div>
+                <p class="text-white mt-4">Fetching data from Arc Testnet...</p>
+            </div>
+
+            <div id="resultsBox" class="hidden space-y-6 animate-fadeIn">
+                <div class="backdrop-blur-xl bg-white/5 rounded-2xl p-6 border border-white/10 shadow-2xl">
+                    <h3 class="text-white font-semibold mb-3">Analyzed Address</h3>
+                    <p id="addressDisplay" class="text-gray-300 font-mono text-sm break-all bg-slate-900/50 p-3 rounded-lg"></p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="p-6 rounded-2xl bg-slate-900/30 border border-purple-500/20">
+                        <h4 class="text-gray-400 text-sm mb-2 font-medium">USDC Balance</h4>
+                        <p id="balance" class="text-3xl font-bold text-white">0</p>
+                        <span class="text-purple-400 text-xs">USDC (detected decimals)</span>
+                    </div>
+                    <div class="p-6 rounded-2xl bg-slate-900/30 border border-indigo-500/20">
+                        <h4 class="text-gray-400 text-sm mb-2 font-medium">Total Transactions</h4>
+                        <p id="txCount" class="text-3xl font-bold text-white">0</p>
+                    </div>
+                    <div class="p-6 rounded-2xl bg-slate-900/30 border border-green-500/20">
+                        <h4 class="text-gray-400 text-sm mb-2 font-medium">Last Activity</h4>
+                        <p id="lastActivity" class="text-2xl font-bold text-white">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bridge section -->
+        <div id="bridgeSection" class="hidden">
+            <div class="backdrop-blur-xl bg-white/5 rounded-2xl p-8 border border-white/10 shadow-2xl max-w-2xl mx-auto">
+
+                <div id="walletConnect" class="mb-6">
+                    <button id="connectWalletBtn" class="w-full px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-semibold hover:opacity-90 transition-all"> Connect Wallet</button>
+                    <div id="walletInfo" class="hidden mt-4 p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                        <p class="text-green-300 text-sm font-semibold">✅ Wallet Connected</p>
+                        <p id="walletAddress" class="text-white font-mono text-xs mt-2"></p>
+                        <p id="walletBalance" class="text-gray-300 text-sm mt-1"></p>
+                    </div>
+                </div>
+
+                <div id="bridgeForm" class="hidden space-y-6">
+                    <!-- Network selector - Bidirectional with swap button -->
+                    <div class="bg-slate-900/50 rounded-2xl p-4 border border-slate-700/50">
+                        <div class="flex items-center justify-between">
+                            <!-- Source Network -->
+                            <div id="sourceNetwork" class="flex items-center gap-3">
+                                <div id="sourceIcon" class="w-12 h-12 rounded-xl overflow-hidden shadow-lg shadow-purple-500/20">
+                                    <img id="sourceImg" src="data:image/webp;base64,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" class="w-full h-full object-cover" alt="Arc">
+                                </div>
+                                <div>
+                                    <p class="text-gray-400 text-xs">From</p>
+                                    <p id="sourceName" class="text-white font-semibold">Arc Testnet</p>
+                                </div>
+                            </div>
+                            
+                            <!-- Swap Button -->
+                            <div class="flex items-center px-4">
+                                <button id="swapNetworksBtn" class="w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center border border-purple-500/50 transition-all hover:scale-110 hover:border-purple-400 cursor-pointer" title="Swap networks">
+                                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            
+                            <!-- Destination Network -->
+                            <div id="destNetwork" class="flex items-center gap-3">
+                                <div>
+                                    <p class="text-gray-400 text-xs text-right">To</p>
+                                    <p id="destName" class="text-white font-semibold">Sepolia</p>
+                                </div>
+                                <div id="destIcon" class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                                    <svg class="w-7 h-7 text-white" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M11.944 17.97L4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0L4.69 12.223l7.365 4.354 7.365-4.35L12.056 0z"/>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Direction indicator -->
+                        <div class="mt-3 text-center">
+                            <span id="directionText" class="text-xs text-gray-500">Arc Testnet → Sepolia</span>
+                        </div>
+                    </div>
+
+                    <!-- Amount input with USDC badge -->
+                    <div class="bg-slate-900/50 rounded-2xl p-4 border border-slate-700/50">
+                        <div class="flex items-center justify-between">
+                            <input type="number" id="bridgeAmount" placeholder="0" step="0.01" min="0.01" class="flex-1 bg-transparent text-3xl text-white font-semibold outline-none placeholder-gray-600" style="max-width: 70%;"/>
+                            <div class="flex items-center gap-2 px-4 py-2 bg-slate-800 rounded-xl">
+                                <div class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
+                                    <span class="text-white text-xs font-bold">$</span>
+                                </div>
+                                <span class="text-white font-semibold">USDC</span>
+                            </div>
+                        </div>
+                        <p class="text-gray-500 text-xs mt-3">Available balance: <span id="availableBalance" class="text-gray-400">0</span> USDC</p>
+                    </div>
+
+                    <button id="startBridgeBtn" class="w-full px-6 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-semibold hover:opacity-90 transition-all">🚀 Start Bridge</button>
+                </div>
+
+                <div id="bridgeProgress" class="hidden space-y-4 mt-6">
+                    <div class="p-4 rounded-xl border border-purple-500/30 bg-slate-900/30">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-white font-semibold">Progress</span>
+                            <span id="progressPercent" class="text-purple-400 font-bold">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-700 rounded-full h-2"><div id="progressBar" class="h-2 rounded-full transition-all duration-500" style="width:0%; background:linear-gradient(90deg,#9333ea,#6366f1)"></div></div>
+                        <p id="progressMessage" class="text-gray-300 text-sm mt-2">Preparing...</p>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div id="step1" class="p-3 rounded-lg border border-gray-700 bg-slate-900/20 flex items-center gap-3"><div class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs text-white">1</div><span id="step1text" class="text-gray-400 flex-1">Approve USDC</span><span id="step1status" class="text-xs"></span></div>
+                        <div id="step2" class="p-3 rounded-lg border border-gray-700 bg-slate-900/20 flex items-center gap-3"><div class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs text-white">2</div><span id="step2text" class="text-gray-400 flex-1">Burn USDC on Arc</span><span id="step2status" class="text-xs"></span></div>
+                        <div id="step3" class="p-3 rounded-lg border border-gray-700 bg-slate-900/20 flex items-center gap-3"><div class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs text-white">3</div><span id="step3text" class="text-gray-400 flex-1">Waiting for Attestation</span><span id="step3status" class="text-xs"></span></div>
+                        <div id="step4" class="p-3 rounded-lg border border-gray-700 bg-slate-900/20 flex items-center gap-3"><div class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs text-white">4</div><span id="step4text" class="text-gray-400 flex-1">Mint USDC on Sepolia</span><span id="step4status" class="text-xs"></span></div>
+                    </div>
+
+                    <div id="successMessage" class="hidden p-4 bg-green-500/10 border border-green-500/30 rounded-lg"><p class="text-green-300 font-semibold text-center">✅ Bridge completed successfully!</p></div>
+                    <div id="errorMessage" class="hidden p-4 bg-red-500/10 border border-red-500/30 rounded-lg"><p class="text-red-300 font-semibold">❌ Bridge Error</p><p id="errorDetail" class="text-gray-300 text-sm mt-2 mono-pre"></p></div>
+                </div>
+
+            </div>
+        </div>
+        </div> <!-- End of centered content -->
+
+        <div class="fixed bottom-4 left-4">
+            <p class="text-gray-600 text-xs font-light">From community to community S2</p>
+        </div>
+    </div>
+    
+    <!-- Particle System Script -->
+    <script>
+    function createParticles() {
+        const container = document.getElementById('particles');
+        const particleCount = 30;
+        
+        for (let i = 0; i < particleCount; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.left = Math.random() * 100 + '%';
+            particle.style.bottom = '-10px';
+            particle.style.animationDuration = (Math.random() * 15 + 10) + 's';
+            particle.style.animationDelay = (Math.random() * 10) + 's';
+            particle.style.width = (Math.random() * 2 + 1) + 'px';
+            particle.style.height = particle.style.width;
+            particle.style.opacity = Math.random() * 0.5 + 0.1;
+            container.appendChild(particle);
+        }
+    }
+    createParticles();
+    </script>
+
+    <script>
+    // ======= CONFIG =======
+    const CONFIG = {
+        ARC: {
+            RPC: 'https://rpc.testnet.arc.network',
+            CHAIN_ID: 5042002,
+            CHAIN_ID_HEX: '0x4CEF52',
+            DOMAIN: 26,
+            USDC: '0x3600000000000000000000000000000000000000',
+            TOKEN_MESSENGER: '0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA',
+            MESSAGE_TRANSMITTER: '0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275',
+            TOKEN_MINTER: '0xb43db544E2c27092c107639Ad201b3dEfAbcF192',
+            NAME: 'Arc Testnet',
+            EXPLORER: 'https://testnet.arcscan.app'
+        },
+        SEPOLIA: {
+            CHAIN_ID: 11155111,
+            CHAIN_ID_HEX: '0xaa36a7',
+            DOMAIN: 0,
+            MESSAGE_TRANSMITTER: '0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275',
+            USDC: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+            TOKEN_MESSENGER: '0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA',
+            TOKEN_MINTER: '0xb43db544E2c27092c107639Ad201b3dEfAbcF192',
+            NAME: 'Sepolia Ethereum'
+        },
+        ATTESTATION_API: 'https://iris-api-sandbox.circle.com/v2/messages'
+    };
+
+    // ======= ABIs =======
+    const USDC_ABI = [
+        'function decimals() view returns (uint8)',
+        'function balanceOf(address) view returns (uint256)',
+        'function allowance(address,address) view returns (uint256)',
+        'function approve(address spender, uint256 amount) returns (bool)'
+    ];
+    const TOKEN_MESSENGER_ABI = [
+        'function depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold) returns (uint64)',
+        'event MessageSent(bytes message)'
+    ];
+    const MESSAGE_TRANSMITTER_ABI = [
+        'function receiveMessage(bytes calldata message, bytes calldata attestation) returns (bool)'
+    ];
+
+    // ======= STATE =======
+    let provider = null;
+    let signer = null;
+    let userAddress = null;
+    let tokenDecimals = 6; // USDC ERC-20 uses 6 decimals
+    
+    // Bridge direction: 'arc-to-sepolia' or 'sepolia-to-arc'
+    let bridgeDirection = 'arc-to-sepolia';
+    
+    // Network icons HTML
+    const ARC_ICON_IMG = `<img src="data:image/webp;base64,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" class="w-full h-full object-cover" alt="Arc">`;
+    const SEPOLIA_ICON_SVG = `<svg class="w-7 h-7 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 17.97L4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0L4.69 12.223l7.365 4.354 7.365-4.35L12.056 0z"/></svg>`;
+
+    // ======= UI HELPERS =======
+    const $ = id => document.getElementById(id);
+    function showErrorBox(msg) { $('errorText').textContent = msg; $('errorBox').classList.remove('hidden'); }
+    function hideErrorBox() { $('errorBox').classList.add('hidden'); $('errorText').textContent = ''; }
+    function setProgress(percent, message) {
+        $('progressBar').style.width = percent + '%';
+        $('progressPercent').textContent = Math.round(percent) + '%';
+        $('progressMessage').textContent = message;
+        console.log(`${percent}% - ${message}`);
+    }
+    function updateStepStatus(stepId, status) {
+        const step = $(stepId);
+        const circle = step.querySelector('div');
+        const text = step.querySelector('span');
+        const statusSpan = $(stepId + 'status');
+        step.classList.remove('border-gray-600','border-yellow-500','border-green-500','border-red-500');
+        step.classList.remove('bg-slate-800/30','bg-yellow-500/10','bg-green-500/10','bg-red-500/10');
+        circle.classList.remove('bg-gray-600','bg-yellow-500','bg-green-500','bg-red-500');
+        text.classList.remove('text-gray-400','text-yellow-300','text-green-300','text-red-300');
+        statusSpan.className = 'text-xs';
+        if (status === 'completed') {
+            step.classList.add('border-green-500','bg-green-500/10'); circle.classList.add('bg-green-500'); circle.innerHTML = '✓'; text.classList.add('text-green-300'); statusSpan.textContent='✓'; statusSpan.classList.add('text-green-400');
+        } else if (status === 'pending') {
+            step.classList.add('border-yellow-500','bg-yellow-500/10'); circle.classList.add('bg-yellow-500'); text.classList.add('text-yellow-300'); statusSpan.textContent='⏳'; statusSpan.classList.add('text-yellow-400');
+        } else if (status === 'error') {
+            step.classList.add('border-red-500','bg-red-500/10'); circle.classList.add('bg-red-500'); text.classList.add('text-red-300'); statusSpan.textContent='✗'; statusSpan.classList.add('text-red-400');
+        } else {
+            step.classList.add('border-gray-600','bg-slate-800/30'); circle.classList.add('bg-gray-600'); circle.innerHTML = stepId.replace('step',''); text.classList.add('text-gray-400'); statusSpan.textContent='';
+        }
+    }
+    
+    // ======= SWAP NETWORKS UI =======
+    function swapNetworks() {
+        bridgeDirection = (bridgeDirection === 'arc-to-sepolia') ? 'sepolia-to-arc' : 'arc-to-sepolia';
+        updateNetworkUI();
+        // Update balance if wallet connected
+        if (userAddress) {
+            updateBalanceForDirection();
+        }
+    }
+    
+    function updateNetworkUI() {
+        const sourceIcon = $('sourceIcon');
+        const destIcon = $('destIcon');
+        const sourceName = $('sourceName');
+        const destName = $('destName');
+        const directionText = $('directionText');
+        
+        if (bridgeDirection === 'arc-to-sepolia') {
+            // Arc -> Sepolia
+            sourceIcon.className = 'w-12 h-12 rounded-xl overflow-hidden shadow-lg shadow-purple-500/20';
+            sourceIcon.innerHTML = ARC_ICON_IMG;
+            sourceName.textContent = 'Arc Testnet';
+            
+            destIcon.className = 'w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20';
+            destIcon.innerHTML = SEPOLIA_ICON_SVG;
+            destName.textContent = 'Sepolia';
+            
+            directionText.textContent = 'Arc Testnet → Sepolia';
+            
+            // Update step labels
+            $('step1text').textContent = 'Approve USDC';
+            $('step2text').textContent = 'Burn USDC on Arc';
+            $('step4text').textContent = 'Mint USDC on Sepolia';
+        } else {
+            // Sepolia -> Arc
+            sourceIcon.className = 'w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20';
+            sourceIcon.innerHTML = SEPOLIA_ICON_SVG;
+            sourceName.textContent = 'Sepolia';
+            
+            destIcon.className = 'w-12 h-12 rounded-xl overflow-hidden shadow-lg shadow-purple-500/20';
+            destIcon.innerHTML = ARC_ICON_IMG;
+            destName.textContent = 'Arc Testnet';
+            
+            directionText.textContent = 'Sepolia → Arc Testnet';
+            
+            // Update step labels
+            $('step1text').textContent = 'Approve USDC';
+            $('step2text').textContent = 'Burn USDC on Sepolia';
+            $('step4text').textContent = 'Mint USDC on Arc';
+        }
+    }
+    
+    async function updateBalanceForDirection() {
+        try {
+            const sourceConfig = (bridgeDirection === 'arc-to-sepolia') ? CONFIG.ARC : CONFIG.SEPOLIA;
+            const targetChainId = sourceConfig.CHAIN_ID_HEX;
+            
+            // Check current chain
+            const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+            
+            if (currentChainId !== targetChainId) {
+                // Need to switch to show correct balance
+                $('availableBalance').textContent = 'Switch network to view';
+                $('walletBalance').textContent = 'Connect to ' + sourceConfig.NAME + ' to view balance';
+                return;
+            }
+            
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+            const usdcRead = new ethers.Contract(sourceConfig.USDC, USDC_ABI, provider);
+            const balRaw = await usdcRead.balanceOf(userAddress);
+            const balPretty = ethers.utils.formatUnits(balRaw, 6);
+            $('availableBalance').textContent = parseFloat(balPretty).toFixed(6);
+            $('walletBalance').textContent = 'Balance on ' + sourceConfig.NAME + ': ' + balPretty + ' USDC';
+        } catch (e) {
+            console.warn('Error updating balance:', e);
+        }
+    }
+    
+    function resetProgressUI() {
+        setProgress(0, 'Preparing...');
+        ['step1','step2','step3','step4'].forEach(s => updateStepStatus(s,'idle'));
+        $('successMessage').classList.add('hidden');
+        $('errorMessage').classList.add('hidden');
+        $('errorDetail').textContent = '';
+    }
+
+    // ======= TRACKER =======
+    async function fetchAddressData() {
+        hideErrorBox();
+        const addr = $('addressInput').value.trim();
+        if (!addr || addr.length !== 42 || !addr.startsWith('0x')) { showErrorBox('Invalid address!'); return; }
+        $('resultsBox').classList.add('hidden'); $('loadingBox').classList.remove('hidden');
+        try {
+            const rpcProvider = new ethers.providers.JsonRpcProvider(CONFIG.ARC.RPC);
+            const balanceWei = await rpcProvider.getBalance(addr);
+            const balanceEth = ethers.utils.formatEther(balanceWei);
+            const txCount = await rpcProvider.getTransactionCount(addr);
+            $('addressDisplay').textContent = addr;
+            $('balance').textContent = parseFloat(balanceEth).toFixed(4);
+            $('txCount').textContent = txCount;
+            $('lastActivity').textContent = txCount>0 ? new Date().toLocaleDateString('pt-BR') : 'Sem atividade';
+            $('loadingBox').classList.add('hidden'); $('resultsBox').classList.remove('hidden');
+        } catch (e) {
+            console.error(e);
+            $('loadingBox').classList.add('hidden');
+            showErrorBox('Error fetching data: ' + (e.message || e));
+        }
+    }
+
+    // ======= CONNECT WALLET =======
+    async function connectWallet() {
+        hideErrorBox();
+        try {
+            if (!window.ethereum) { alert('Instale MetaMask ou Rabby!'); return; }
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+            await provider.send('eth_requestAccounts', []);
+            signer = provider.getSigner();
+            userAddress = await signer.getAddress();
+            // switch to Arc if needed
+            const net = await provider.getNetwork();
+            if (net.chainId !== CONFIG.ARC.CHAIN_ID) {
+                try {
+                    await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{ chainId: CONFIG.ARC.CHAIN_ID_HEX }] });
+                } catch (swErr) {
+                    if (swErr.code === 4902) {
+                        await window.ethereum.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: CONFIG.ARC.CHAIN_ID_HEX,
+                                chainName: CONFIG.ARC.NAME,
+                                rpcUrls: [CONFIG.ARC.RPC],
+                                nativeCurrency: { name:'tUSDC', symbol:'USDC', decimals: 18 },
+                                blockExplorerUrls: [CONFIG.ARC.EXPLORER]
+                            }]
+                        });
+                    } else throw swErr;
+                }
+                provider = new ethers.providers.Web3Provider(window.ethereum);
+                signer = provider.getSigner();
+            }
+
+            // detect decimals and USDC balance
+const usdcRead = new ethers.Contract(CONFIG.ARC.USDC, USDC_ABI, provider);
+try {
+    // many ERC-20 USDC implementations expose 6 decimals for token amounts
+    const detected = await usdcRead.decimals();
+    // force ERC-20 USDC behaviour to 6 decimals for approve/parseUnits etc.
+    tokenDecimals = (Number(detected) === 6) ? 6 : 6; // use 6 for ERC-20 USDC interface
+    // NOTE: if you ever need to treat native gas accounting separate from ERC-20 token units,
+    // create a separate var like `erc20Decimals` vs `nativeDecimals`.
+} catch(e) {
+    tokenDecimals = 6; // default to 6 for USDC ERC-20
+}
+            const balRaw = await usdcRead.balanceOf(userAddress);
+            const balPretty = ethers.utils.formatUnits(balRaw, tokenDecimals);
+
+            // Hide connect button, show wallet info
+            $('connectWalletBtn').classList.add('hidden');
+            $('walletInfo').classList.remove('hidden');
+            $('walletAddress').textContent = userAddress;
+            $('walletBalance').textContent = 'Balance (native token): ' + balPretty + ' USDC';
+            $('availableBalance').textContent = parseFloat(balPretty).toFixed(6);
+
+            // Show wallet indicator in top right (abbreviated address)
+            const shortAddr = userAddress.slice(0, 6) + '...' + userAddress.slice(-4);
+            $('walletShort').textContent = shortAddr;
+            $('walletIndicator').classList.remove('hidden');
+
+            // show form
+            $('bridgeForm').classList.remove('hidden');
+
+        } catch (e) {
+            console.error('Error connecting wallet', e);
+            alert('Wallet connection error: ' + (e.message || e));
+        }
+    }
+
+    // ======= BRIDGE FLOW =======
+    async function executeBridge() {
+        hideErrorBox();
+        resetProgressUI();
+        const rawAmount = $('bridgeAmount').value;
+        if (!rawAmount || Number(rawAmount) <= 0) { alert('Please enter a valid amount!'); return; }
+        const recipient = userAddress; // Always send to own wallet
+
+        $('bridgeForm').classList.add('hidden'); $('bridgeProgress').classList.remove('hidden');
+        try {
+            setProgress(5, 'Starting bridge...');
+            
+            if (bridgeDirection === 'arc-to-sepolia') {
+                // ========== ARC -> SEPOLIA ==========
+                // APPROVE
+                await approveUSDC_Arc(rawAmount);
+                // BURN
+                const burnTxHash = await burnUSDC_Arc(rawAmount, recipient);
+                // ATTESTATION
+                const att = await waitForAttestation(burnTxHash, CONFIG.ARC.DOMAIN);
+                // MINT
+                await mintOnSepolia(att.message, att.attestation);
+            } else {
+                // ========== SEPOLIA -> ARC ==========
+                // APPROVE
+                await approveUSDC_Sepolia(rawAmount);
+                // BURN
+                const burnTxHash = await burnUSDC_Sepolia(rawAmount, recipient);
+                // ATTESTATION
+                const att = await waitForAttestation(burnTxHash, CONFIG.SEPOLIA.DOMAIN);
+                // MINT
+                await mintOnArc(att.message, att.attestation);
+            }
+            
+            setProgress(100, '✅ Bridge completed!');
+            $('successMessage').classList.remove('hidden');
+            setTimeout(resetBridge, 4000);
+        } catch (err) {
+            console.error('Bridge error', err);
+            $('errorMessage').classList.remove('hidden');
+            $('errorDetail').textContent = (err?.message || JSON.stringify(err)).slice(0, 2000);
+            setProgress(0, 'Error during process');
+            // show detail to debug
+            setTimeout(resetBridge, 8000);
+        }
+    }
+
+    function resetBridge() {
+        $('bridgeProgress').classList.add('hidden');
+        $('bridgeForm').classList.remove('hidden');
+        $('bridgeAmount').value = '';
+        resetProgressUI();
+    }
+
+    // ======= STEP 1: APPROVE (ARC) =======
+    async function approveUSDC_Arc(amount) {
+        setProgress(10, 'Approving USDC on Arc...');
+        updateStepStatus('step1', 'pending');
+        try {
+            const usdc = new ethers.Contract(CONFIG.ARC.USDC, USDC_ABI, signer);
+            const amountUnits = ethers.utils.parseUnits(String(amount), tokenDecimals);
+            const allowance = await usdc.allowance(userAddress, CONFIG.ARC.TOKEN_MESSENGER);
+            if (allowance.lt(amountUnits)) {
+                // approve max for convenience
+                const tx = await usdc.approve(CONFIG.ARC.TOKEN_MESSENGER, ethers.constants.MaxUint256);
+                setProgress(15, 'Waiting for approval confirmation...');
+                await tx.wait();
+            }
+            setProgress(25, 'Approval confirmed ✓');
+            updateStepStatus('step1','completed');
+        } catch (e) {
+            updateStepStatus('step1','error');
+            throw new Error('Approval failed: ' + (e?.message || e));
+        }
+    }
+
+    // ======= STEP 2: BURN on ARC =======
+    async function burnUSDC_Arc(amount, recipient) {
+        setProgress(30, 'Burning USDC on Arc (depositForBurn)...');
+        updateStepStatus('step2','pending');
+        try {
+            const messenger = new ethers.Contract(CONFIG.ARC.TOKEN_MESSENGER, TOKEN_MESSENGER_ABI, signer);
+            const amountUnits = ethers.utils.parseUnits(String(amount), tokenDecimals);
+            // mintRecipient: left-padded bytes32 of the recipient address
+            const recipientChecksum = ethers.utils.getAddress(recipient);
+            const mintRecipient = ethers.utils.hexZeroPad(recipientChecksum, 32);
+            const destinationCaller = ethers.constants.HashZero;
+            
+            // IMPORTANT: For testnet, maxFee should be 0 (no fee)
+            const maxFee = 0;
+            const minFinalityThreshold = 1000; // Fast Transfer
+            
+            console.log('Burn Arc parameters:');
+            console.log('- Amount:', amountUnits.toString());
+            console.log('- Destination Domain:', CONFIG.SEPOLIA.DOMAIN);
+            console.log('- Mint Recipient:', mintRecipient);
+            console.log('- Burn Token:', CONFIG.ARC.USDC);
+            console.log('- Max Fee:', maxFee);
+            console.log('- Min Finality Threshold:', minFinalityThreshold);
+
+            // attempt estimateGas
+            let tx;
+            try {
+                const estimated = await messenger.estimateGas.depositForBurn(
+                    amountUnits,
+                    CONFIG.SEPOLIA.DOMAIN,
+                    mintRecipient,
+                    CONFIG.ARC.USDC,
+                    destinationCaller,
+                    maxFee,
+                    minFinalityThreshold
+                );
+                const gasLimit = estimated.mul(150).div(100); // +50% buffer
+                console.log('Estimated gas:', estimated.toString());
+                tx = await messenger.depositForBurn(amountUnits, CONFIG.SEPOLIA.DOMAIN, mintRecipient, CONFIG.ARC.USDC, destinationCaller, maxFee, minFinalityThreshold, { gasLimit });
+            } catch (estErr) {
+                // fallback: send with high gasLimit to obtain revert reason if any
+                console.warn('estimateGas failed, sending with high gasLimit', estErr);
+                tx = await messenger.depositForBurn(amountUnits, CONFIG.SEPOLIA.DOMAIN, mintRecipient, CONFIG.ARC.USDC, destinationCaller, maxFee, minFinalityThreshold, { gasLimit: 500000 });
+            }
+
+            setProgress(40, 'Transaction sent: ' + tx.hash + ' — waiting for receipt...');
+            const receipt = await tx.wait();
+            console.log('Burn receipt', receipt);
+            setProgress(50, 'Burn confirmed ✓');
+            updateStepStatus('step2','completed');
+            return tx.hash;
+        } catch (e) {
+            updateStepStatus('step2','error');
+            console.error('Burn error:', e);
+            // try to extract revert reason
+            const reason = e?.error?.data?.message || e?.reason || e?.message || String(e);
+            throw new Error('Burn failed: ' + reason);
+        }
+    }
+
+    // ======= STEP 1: APPROVE (SEPOLIA) =======
+    async function approveUSDC_Sepolia(amount) {
+        setProgress(10, 'Switching to Sepolia...');
+        updateStepStatus('step1', 'pending');
+        
+        // First ensure we're on Sepolia
+        try {
+            const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+            if (currentChainId !== CONFIG.SEPOLIA.CHAIN_ID_HEX) {
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: CONFIG.SEPOLIA.CHAIN_ID_HEX }]
+                    });
+                } catch (swErr) {
+                    if (swErr.code === 4902 || (swErr.message && swErr.message.includes('Unrecognized chain'))) {
+                        await window.ethereum.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: CONFIG.SEPOLIA.CHAIN_ID_HEX,
+                                chainName: 'Sepolia Testnet',
+                                rpcUrls: ['https://1rpc.io/sepolia', 'https://eth-sepolia.public.blastapi.io', 'https://rpc2.sepolia.org'],
+                                nativeCurrency: { name:'Sepolia ETH', symbol:'ETH', decimals: 18 },
+                                blockExplorerUrls: ['https://sepolia.etherscan.io']
+                            }]
+                        });
+                        await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{ chainId: CONFIG.SEPOLIA.CHAIN_ID_HEX }] });
+                    } else {
+                        throw swErr;
+                    }
+                }
+                await new Promise(r => setTimeout(r, 1000));
+                provider = new ethers.providers.Web3Provider(window.ethereum);
+                signer = provider.getSigner();
+            }
+        } catch (e) {
+            updateStepStatus('step1','error');
+            throw new Error('Failed to switch to Sepolia: ' + (e?.message || e));
+        }
+        
+        setProgress(15, 'Approving USDC on Sepolia...');
+        try {
+            const usdc = new ethers.Contract(CONFIG.SEPOLIA.USDC, USDC_ABI, signer);
+            const amountUnits = ethers.utils.parseUnits(String(amount), tokenDecimals);
+            const allowance = await usdc.allowance(userAddress, CONFIG.SEPOLIA.TOKEN_MESSENGER);
+            if (allowance.lt(amountUnits)) {
+                const tx = await usdc.approve(CONFIG.SEPOLIA.TOKEN_MESSENGER, ethers.constants.MaxUint256);
+                setProgress(20, 'Waiting for approval confirmation...');
+                await tx.wait();
+            }
+            setProgress(25, 'Approval confirmed ✓');
+            updateStepStatus('step1','completed');
+        } catch (e) {
+            updateStepStatus('step1','error');
+            throw new Error('Approval failed: ' + (e?.message || e));
+        }
+    }
+
+    // ======= STEP 2: BURN on SEPOLIA =======
+    async function burnUSDC_Sepolia(amount, recipient) {
+        setProgress(30, 'Burning USDC on Sepolia (depositForBurn)...');
+        updateStepStatus('step2','pending');
+        try {
+            const messenger = new ethers.Contract(CONFIG.SEPOLIA.TOKEN_MESSENGER, TOKEN_MESSENGER_ABI, signer);
+            const amountUnits = ethers.utils.parseUnits(String(amount), tokenDecimals);
+            const recipientChecksum = ethers.utils.getAddress(recipient);
+            const mintRecipient = ethers.utils.hexZeroPad(recipientChecksum, 32);
+            const destinationCaller = ethers.constants.HashZero;
+            
+            const maxFee = 0; // Testnet: no fee
+            const minFinalityThreshold = 1000; // Fast Transfer
+            
+            console.log('Burn Sepolia parameters:');
+            console.log('- Amount:', amountUnits.toString());
+            console.log('- Destination Domain:', CONFIG.ARC.DOMAIN);
+            console.log('- Mint Recipient:', mintRecipient);
+            console.log('- Burn Token:', CONFIG.SEPOLIA.USDC);
+            console.log('- Max Fee:', maxFee);
+            console.log('- Min Finality Threshold:', minFinalityThreshold);
+
+            let tx;
+            try {
+                const estimated = await messenger.estimateGas.depositForBurn(
+                    amountUnits,
+                    CONFIG.ARC.DOMAIN,
+                    mintRecipient,
+                    CONFIG.SEPOLIA.USDC,
+                    destinationCaller,
+                    maxFee,
+                    minFinalityThreshold
+                );
+                const gasLimit = estimated.mul(150).div(100);
+                console.log('Estimated gas:', estimated.toString());
+                tx = await messenger.depositForBurn(amountUnits, CONFIG.ARC.DOMAIN, mintRecipient, CONFIG.SEPOLIA.USDC, destinationCaller, maxFee, minFinalityThreshold, { gasLimit });
+            } catch (estErr) {
+                console.warn('estimateGas failed, sending with high gasLimit', estErr);
+                tx = await messenger.depositForBurn(amountUnits, CONFIG.ARC.DOMAIN, mintRecipient, CONFIG.SEPOLIA.USDC, destinationCaller, maxFee, minFinalityThreshold, { gasLimit: 500000 });
+            }
+
+            setProgress(40, 'Transaction sent: ' + tx.hash + ' — waiting for receipt...');
+            const receipt = await tx.wait();
+            console.log('Burn receipt', receipt);
+            setProgress(50, 'Burn confirmed ✓');
+            updateStepStatus('step2','completed');
+            return tx.hash;
+        } catch (e) {
+            updateStepStatus('step2','error');
+            console.error('Burn error:', e);
+            const reason = e?.error?.data?.message || e?.reason || e?.message || String(e);
+            throw new Error('Burn failed: ' + reason);
+        }
+    }
+
+    // ======= STEP 3: POLL ATTESTATION (Circle Iris API) =======
+    async function waitForAttestation(txHash, sourceDomain) {
+        setProgress(55, 'Waiting for attestation (Circle Iris API)...');
+        updateStepStatus('step3','pending');
+        const maxAttempts = 120; // Up to 10 minutes
+        let attempts = 0;
+        
+        console.log('Polling attestation for tx:', txHash);
+        console.log('Using API endpoint:', CONFIG.ATTESTATION_API);
+        console.log('Source domain:', sourceDomain);
+        
+        while (attempts < maxAttempts) {
+            try {
+                const url = `${CONFIG.ATTESTATION_API}/${sourceDomain}?transactionHash=${txHash}`;
+                console.log('Fetching:', url);
+                
+                const res = await fetch(url);
+                console.log('Response status:', res.status);
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    console.log('Attestation response:', JSON.stringify(data, null, 2));
+                    
+                    if (data?.messages && data.messages.length > 0) {
+                        const message = data.messages[0];
+                        console.log('Message status:', message.status);
+                        
+                        if (message.status === 'complete' && message.attestation) {
+                            setProgress(75, 'Attestation received ✓');
+                            updateStepStatus('step3','completed');
+                            console.log('Attestation complete!');
+                            console.log('Message bytes:', message.message);
+                            console.log('Attestation bytes:', message.attestation);
+                            return { message: message.message, attestation: message.attestation };
+                        } else {
+                            setProgress(55 + (attempts / maxAttempts) * 20, `Status: ${message.status}... (${attempts*5}s)`);
+                        }
+                    }
+                } else {
+                    const errorText = await res.text();
+                    console.log('Attestation error response:', errorText);
+                }
+            } catch (e) {
+                console.log('Attestation fetch error:', e);
+            }
+            await new Promise(r => setTimeout(r, 5000));
+            attempts++;
+            const progress = 55 + (attempts / maxAttempts) * 20;
+            setProgress(progress, `Waiting for attestation... (${attempts*5}s)`);
+        }
+        updateStepStatus('step3','error');
+        throw new Error('Timeout waiting for attestation — check the explorer and Iris API');
+    }
+
+    // ======= STEP 4: MINT ON SEPOLIA =======
+    async function mintOnSepolia(message, attestation) {
+        setProgress(80, 'Switching to Sepolia...');
+        updateStepStatus('step4','pending');
+        try {
+            // switch network to Sepolia
+            try {
+                await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{ chainId: CONFIG.SEPOLIA.CHAIN_ID_HEX }] });
+            } catch (swErr) {
+                // Error 4902: Chain not added to wallet
+                if (swErr.code === 4902 || swErr.message?.includes('Unrecognized chain') || swErr.message?.includes('wallet_addEthereumChain')) {
+                    setProgress(80, 'Adding Sepolia network to wallet...');
+                    try {
+                        await window.ethereum.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: CONFIG.SEPOLIA.CHAIN_ID_HEX,
+                                chainName: 'Sepolia Testnet',
+                                rpcUrls: ['https://1rpc.io/sepolia', 'https://eth-sepolia.public.blastapi.io', 'https://rpc2.sepolia.org'],
+                                nativeCurrency: { name:'Sepolia ETH', symbol:'ETH', decimals: 18 },
+                                blockExplorerUrls: ['https://sepolia.etherscan.io']
+                            }]
+                        });
+                        // After adding, try switching again
+                        await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{ chainId: CONFIG.SEPOLIA.CHAIN_ID_HEX }] });
+                    } catch (addErr) {
+                        // If user rejected or another error, show helpful message
+                        throw new Error('Please add Sepolia network to your wallet manually:\n\nNetwork: Sepolia Testnet\nRPC: https://1rpc.io/sepolia\nChain ID: 11155111\nSymbol: ETH\nExplorer: https://sepolia.etherscan.io\n\nAfter adding, click "Start Bridge" again.');
+                    }
+                } else if (swErr.code === 4001) {
+                    throw new Error('Network switch rejected. Please approve the network switch to continue.');
+                } else {
+                    throw new Error('Failed to switch to Sepolia: ' + (swErr.message || swErr));
+                }
+            }
+            
+            // Small delay to ensure wallet has switched
+            await new Promise(r => setTimeout(r, 1000));
+            
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+            signer = provider.getSigner();
+            
+            // Verify we're on the right network
+            const network = await provider.getNetwork();
+            if (network.chainId !== CONFIG.SEPOLIA.CHAIN_ID) {
+                throw new Error('Wallet is not on Sepolia network. Please switch manually and try again.');
+            }
+            
+            // Check ETH balance on Sepolia for gas
+            const ethBalance = await provider.getBalance(userAddress);
+            const ethBalanceFormatted = ethers.utils.formatEther(ethBalance);
+            console.log('Sepolia ETH balance:', ethBalanceFormatted);
+            
+            if (ethBalance.lt(ethers.utils.parseEther('0.001'))) {
+                throw new Error('Insufficient ETH balance on Sepolia for gas. You need at least 0.001 ETH.\n\nGet free testnet ETH at:\nhttps://www.alchemy.com/faucets/ethereum-sepolia\nhttps://sepoliafaucet.com');
+            }
+
+            setProgress(85, 'Calling receiveMessage on Sepolia...');
+            const transmitter = new ethers.Contract(CONFIG.SEPOLIA.MESSAGE_TRANSMITTER, MESSAGE_TRANSMITTER_ABI, signer);
+
+            // Circle Iris API V2 returns message and attestation as hex strings (0x prefixed)
+            // Ensure proper formatting
+            let msgBytes = message;
+            let attBytes = attestation;
+            
+            // Log for debugging
+            console.log('Raw message:', message);
+            console.log('Raw attestation:', attestation);
+            
+            // If not already hex-prefixed, try base64 conversion (fallback for older API versions)
+            function base64ToHex(base64) {
+                try {
+                    const bin = atob(base64);
+                    let hex = '0x';
+                    for (let i=0;i<bin.length;i++) {
+                        const h = bin.charCodeAt(i).toString(16);
+                        hex += h.length===1 ? '0'+h : h;
+                    }
+                    return hex;
+                } catch (e) { return null; }
+            }
+            
+            if (typeof msgBytes === 'string' && !msgBytes.startsWith('0x')) {
+                const h = base64ToHex(msgBytes);
+                if (h) msgBytes = h;
+                else msgBytes = '0x' + msgBytes; // try adding prefix
+            }
+            if (typeof attBytes === 'string' && !attBytes.startsWith('0x')) {
+                const h = base64ToHex(attBytes);
+                if (h) attBytes = h;
+                else attBytes = '0x' + attBytes;
+            }
+
+            console.log('Formatted message:', msgBytes);
+            console.log('Formatted attestation:', attBytes);
+            console.log('MessageTransmitter contract:', CONFIG.SEPOLIA.MESSAGE_TRANSMITTER);
+
+            // Try to estimate gas first
+            let gasLimit = 500000;
+            try {
+                const estimated = await transmitter.estimateGas.receiveMessage(msgBytes, attBytes);
+                gasLimit = estimated.mul(130).div(100); // +30% buffer
+                console.log('Estimated gas:', estimated.toString());
+            } catch (estErr) {
+                console.warn('Gas estimation failed:', estErr);
+            }
+
+            const mintTx = await transmitter.receiveMessage(msgBytes, attBytes, { gasLimit });
+            setProgress(90, 'Mint tx sent on Sepolia: ' + mintTx.hash);
+            console.log('Mint tx hash:', mintTx.hash);
+            
+            const receipt = await mintTx.wait();
+            console.log('Mint receipt:', receipt);
+            
+            setProgress(95, 'Mint confirmed on Sepolia! ✓');
+            updateStepStatus('step4','completed');
+        } catch (e) {
+            updateStepStatus('step4','error');
+            console.error('Mint error details:', e);
+            const reason = e?.error?.data?.message || e?.reason || e?.message || String(e);
+            throw new Error('Mint failed: ' + reason);
+        }
+    }
+
+    // ======= STEP 4: MINT ON ARC =======
+    async function mintOnArc(message, attestation) {
+        setProgress(80, 'Switching to Arc Testnet...');
+        updateStepStatus('step4','pending');
+        try {
+            // switch network to Arc
+            try {
+                await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{ chainId: CONFIG.ARC.CHAIN_ID_HEX }] });
+            } catch (swErr) {
+                if (swErr.code === 4902 || swErr.message?.includes('Unrecognized chain') || swErr.message?.includes('wallet_addEthereumChain')) {
+                    setProgress(80, 'Adding Arc Testnet network to wallet...');
+                    try {
+                        await window.ethereum.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: CONFIG.ARC.CHAIN_ID_HEX,
+                                chainName: CONFIG.ARC.NAME,
+                                rpcUrls: ['https://rpc-testnet.arcscan.net'],
+                                nativeCurrency: { name:'tUSDC', symbol:'USDC', decimals: 18 },
+                                blockExplorerUrls: [CONFIG.ARC.EXPLORER]
+                            }]
+                        });
+                        await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{ chainId: CONFIG.ARC.CHAIN_ID_HEX }] });
+                    } catch (addErr) {
+                        throw new Error('Please add Arc Testnet to your wallet manually:\n\nNetwork: Arc Testnet\nRPC: https://rpc-testnet.arcscan.net\nChain ID: 1660000000026\nSymbol: USDC\nExplorer: https://testnet.arcscan.net');
+                    }
+                } else if (swErr.code === 4001) {
+                    throw new Error('Network switch rejected. Please approve the network switch to continue.');
+                } else {
+                    throw new Error('Failed to switch to Arc: ' + (swErr.message || swErr));
+                }
+            }
+            
+            await new Promise(r => setTimeout(r, 1000));
+            
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+            signer = provider.getSigner();
+            
+            // Verify we're on Arc network
+            const network = await provider.getNetwork();
+            if (network.chainId !== CONFIG.ARC.CHAIN_ID) {
+                throw new Error('Wallet is not on Arc Testnet. Please switch manually and try again.');
+            }
+            
+            // Check USDC balance for gas (Arc uses USDC as native gas)
+            const gasBalance = await provider.getBalance(userAddress);
+            const gasFormatted = ethers.utils.formatEther(gasBalance);
+            console.log('Arc native USDC balance (for gas):', gasFormatted);
+            
+            if (gasBalance.lt(ethers.utils.parseEther('0.01'))) {
+                throw new Error('Insufficient USDC balance on Arc for gas. You need at least 0.01 USDC.\n\nGet testnet USDC at: https://faucet.circle.com');
+            }
+
+            setProgress(85, 'Calling receiveMessage on Arc...');
+            const transmitter = new ethers.Contract(CONFIG.ARC.MESSAGE_TRANSMITTER, MESSAGE_TRANSMITTER_ABI, signer);
+
+            let msgBytes = message;
+            let attBytes = attestation;
+            
+            console.log('Raw message:', message);
+            console.log('Raw attestation:', attestation);
+            
+            function base64ToHex(base64) {
+                try {
+                    const bin = atob(base64);
+                    let hex = '0x';
+                    for (let i=0;i<bin.length;i++) {
+                        const h = bin.charCodeAt(i).toString(16);
+                        hex += h.length===1 ? '0'+h : h;
+                    }
+                    return hex;
+                } catch (e) { return null; }
+            }
+            
+            if (typeof msgBytes === 'string' && !msgBytes.startsWith('0x')) {
+                const h = base64ToHex(msgBytes);
+                if (h) msgBytes = h;
+                else msgBytes = '0x' + msgBytes;
+            }
+            if (typeof attBytes === 'string' && !attBytes.startsWith('0x')) {
+                const h = base64ToHex(attBytes);
+                if (h) attBytes = h;
+                else attBytes = '0x' + attBytes;
+            }
+
+            console.log('Formatted message:', msgBytes);
+            console.log('Formatted attestation:', attBytes);
+            console.log('MessageTransmitter contract:', CONFIG.ARC.MESSAGE_TRANSMITTER);
+
+            let gasLimit = 500000;
+            try {
+                const estimated = await transmitter.estimateGas.receiveMessage(msgBytes, attBytes);
+                gasLimit = estimated.mul(130).div(100);
+                console.log('Estimated gas:', estimated.toString());
+            } catch (estErr) {
+                console.warn('Gas estimation failed:', estErr);
+            }
+
+            const mintTx = await transmitter.receiveMessage(msgBytes, attBytes, { gasLimit });
+            setProgress(90, 'Mint tx sent on Arc: ' + mintTx.hash);
+            console.log('Mint tx hash:', mintTx.hash);
+            
+            const receipt = await mintTx.wait();
+            console.log('Mint receipt:', receipt);
+            
+            setProgress(95, 'Mint confirmed on Arc! ✓');
+            updateStepStatus('step4','completed');
+        } catch (e) {
+            updateStepStatus('step4','error');
+            console.error('Mint error details:', e);
+            const reason = e?.error?.data?.message || e?.reason || e?.message || String(e);
+            throw new Error('Mint failed: ' + reason);
+        }
+    }
+
+    // ======= EVENTS =======
+    $('searchBtn').addEventListener('click', fetchAddressData);
+    $('addressInput').addEventListener('keypress', (e)=> { if (e.key === 'Enter') fetchAddressData(); });
+    $('connectWalletBtn').addEventListener('click', connectWallet);
+    $('startBridgeBtn').addEventListener('click', executeBridge);
+    $('swapNetworksBtn').addEventListener('click', swapNetworks);
+
+    // tabs
+    $('trackerTab').addEventListener('click', ()=> { $('trackerTab').classList.add('tab-active'); $('bridgeTab').classList.remove('tab-active'); $('trackerSection').classList.remove('hidden'); $('bridgeSection').classList.add('hidden'); });
+    $('bridgeTab').addEventListener('click', ()=> { $('bridgeTab').classList.add('tab-active'); $('trackerTab').classList.remove('tab-active'); $('bridgeSection').classList.remove('hidden'); $('trackerSection').classList.add('hidden'); });
+
+    // init
+    resetProgressUI();
+    updateNetworkUI(); // Initialize network display
+    console.log('✅ FluxShift - script loaded', CONFIG);
+    </script>
+</body>
+</html>
