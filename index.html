@@ -98,6 +98,14 @@
 
     <div class="max-w-7xl mx-auto relative z-10 p-4 md:p-6">
         
+        <!-- Pending Action Indicator (next to wallet) -->
+        <div id="pendingIndicator" class="hidden fixed top-4 right-44 z-50 cursor-pointer" onclick="showPendingModal()">
+            <div class="flex items-center gap-2 px-3 py-2 bg-orange-500/20 backdrop-blur-sm rounded-full border border-orange-500/50 hover:bg-orange-500/30 transition-all">
+                <div class="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
+                <span class="text-orange-300 text-xs font-semibold">Action needed</span>
+            </div>
+        </div>
+        
         <!-- Wallet indicator (top right) -->
         <div id="walletIndicator" class="hidden fixed top-4 right-4 z-50">
             <div class="flex items-center gap-2 px-3 py-2 bg-slate-900/90 backdrop-blur-sm rounded-full border border-purple-500/30">
@@ -301,6 +309,23 @@
                         <div id="step3" class="p-3 rounded-lg border border-gray-700 bg-slate-900/20 flex items-center gap-3"><div class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs text-white">3</div><span id="step3text" class="text-gray-400 flex-1">Waiting for Attestation</span><span id="step3status" class="text-xs"></span></div>
                         <div id="step4" class="p-3 rounded-lg border border-gray-700 bg-slate-900/20 flex items-center gap-3"><div class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs text-white">4</div><span id="step4text" class="text-gray-400 flex-1">Mint USDC on Sepolia</span><span id="step4status" class="text-xs"></span></div>
                     </div>
+                    
+                    <!-- Estimated time display -->
+                    <div id="estimatedTime" class="hidden text-center p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                        <p class="text-blue-300 text-sm">⏱️ Estimated wait: <span id="timeRemaining" class="font-bold">~25 min</span></p>
+                        <p class="text-gray-500 text-xs mt-1">You can leave this page - your transaction will be saved</p>
+                    </div>
+                    
+                    <!-- Manual Mint Button (appears when attestation is ready) -->
+                    <div id="mintReadySection" class="hidden">
+                        <div class="p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-center">
+                            <p class="text-green-300 font-semibold mb-3">✅ Attestation Ready!</p>
+                            <p class="text-gray-400 text-sm mb-4">Click below to complete the mint on the destination chain</p>
+                            <button id="manualMintBtn" onclick="executeManualMint()" class="w-full px-6 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-semibold hover:opacity-90 transition-all text-lg">
+                                🪙 Complete Mint
+                            </button>
+                        </div>
+                    </div>
 
                     <div id="successMessage" class="hidden p-4 bg-green-500/10 border border-green-500/30 rounded-lg"><p class="text-green-300 font-semibold text-center">✅ Bridge completed successfully!</p></div>
                     <div id="errorMessage" class="hidden p-4 bg-red-500/10 border border-red-500/30 rounded-lg"><p class="text-red-300 font-semibold">❌ Bridge Error</p><p id="errorDetail" class="text-gray-300 text-sm mt-2 mono-pre"></p></div>
@@ -309,6 +334,26 @@
             </div>
         </div>
         </div> <!-- End of centered content -->
+        
+        <!-- Pending Transactions Modal -->
+        <div id="pendingModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div class="bg-slate-900 rounded-2xl p-6 border border-purple-500/30 max-w-md w-full mx-4 shadow-2xl">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-white font-bold text-lg">Pending Transactions</h3>
+                    <button onclick="hidePendingModal()" class="text-gray-400 hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div id="pendingList" class="space-y-3 max-h-80 overflow-y-auto">
+                    <!-- Pending transactions will be listed here -->
+                </div>
+                <div id="noPendingMsg" class="hidden text-center py-8">
+                    <p class="text-gray-500">No pending transactions</p>
+                </div>
+            </div>
+        </div>
 
         <div class="fixed bottom-4 left-4">
             <p class="text-gray-600 text-xs font-light">From community to community S2</p>
@@ -389,9 +434,219 @@
     // Bridge direction: 'arc-to-sepolia' or 'sepolia-to-arc'
     let bridgeDirection = 'arc-to-sepolia';
     
+    // Current pending transaction data (for manual mint)
+    let currentPendingTx = null;
+    
     // Network icons HTML
     const ARC_ICON_IMG = `<img src="data:image/webp;base64,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" class="w-full h-full object-cover" alt="Arc">`;
     const SEPOLIA_ICON_SVG = `<svg class="w-7 h-7 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 17.97L4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0L4.69 12.223l7.365 4.354 7.365-4.35L12.056 0z"/></svg>`;
+
+    // ======= PENDING TRANSACTIONS STORAGE =======
+    const STORAGE_KEY = 'fluxshift_pending_txs';
+    
+    function savePendingTx(tx) {
+        try {
+            const pending = getPendingTxs();
+            pending.push(tx);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+            updatePendingIndicator();
+        } catch (e) { console.warn('Error saving pending tx:', e); }
+    }
+    
+    function getPendingTxs() {
+        try {
+            const data = localStorage.getItem(STORAGE_KEY);
+            return data ? JSON.parse(data) : [];
+        } catch (e) { return []; }
+    }
+    
+    function removePendingTx(burnTxHash) {
+        try {
+            const pending = getPendingTxs().filter(tx => tx.burnTxHash !== burnTxHash);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+            updatePendingIndicator();
+        } catch (e) { console.warn('Error removing pending tx:', e); }
+    }
+    
+    function updatePendingTx(burnTxHash, updates) {
+        try {
+            const pending = getPendingTxs();
+            const idx = pending.findIndex(tx => tx.burnTxHash === burnTxHash);
+            if (idx >= 0) {
+                pending[idx] = { ...pending[idx], ...updates };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+            }
+            updatePendingIndicator();
+        } catch (e) { console.warn('Error updating pending tx:', e); }
+    }
+    
+    function updatePendingIndicator() {
+        const pending = getPendingTxs();
+        const readyTxs = pending.filter(tx => tx.status === 'ready_to_mint');
+        if (readyTxs.length > 0) {
+            $('pendingIndicator').classList.remove('hidden');
+        } else {
+            $('pendingIndicator').classList.add('hidden');
+        }
+    }
+    
+    function showPendingModal() {
+        const pending = getPendingTxs();
+        const listEl = $('pendingList');
+        const noMsgEl = $('noPendingMsg');
+        
+        if (pending.length === 0) {
+            listEl.classList.add('hidden');
+            noMsgEl.classList.remove('hidden');
+        } else {
+            listEl.classList.remove('hidden');
+            noMsgEl.classList.add('hidden');
+            
+            listEl.innerHTML = pending.map(tx => {
+                const direction = tx.direction === 'arc-to-sepolia' ? 'Arc → Sepolia' : 'Sepolia → Arc';
+                const statusColor = tx.status === 'ready_to_mint' ? 'green' : 'yellow';
+                const statusText = tx.status === 'ready_to_mint' ? 'Ready to Mint' : 'Waiting Attestation';
+                const timeAgo = getTimeAgo(tx.timestamp);
+                
+                return `
+                    <div class="p-3 bg-slate-800/50 rounded-lg border border-${statusColor}-500/30">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-white font-medium text-sm">${tx.amount} USDC</span>
+                            <span class="text-${statusColor}-400 text-xs">${statusText}</span>
+                        </div>
+                        <p class="text-gray-500 text-xs">${direction}</p>
+                        <p class="text-gray-600 text-xs">${timeAgo}</p>
+                        ${tx.status === 'ready_to_mint' ? `
+                            <button onclick="resumeMint('${tx.burnTxHash}')" class="mt-2 w-full px-3 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-all">
+                                🪙 Complete Mint
+                            </button>
+                        ` : `
+                            <button onclick="checkAttestation('${tx.burnTxHash}')" class="mt-2 w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-all">
+                                🔄 Check Status
+                            </button>
+                        `}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        $('pendingModal').classList.remove('hidden');
+    }
+    
+    function hidePendingModal() {
+        $('pendingModal').classList.add('hidden');
+    }
+    
+    function getTimeAgo(timestamp) {
+        const seconds = Math.floor((Date.now() - timestamp) / 1000);
+        if (seconds < 60) return 'Just now';
+        if (seconds < 3600) return Math.floor(seconds / 60) + ' min ago';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + ' hours ago';
+        return Math.floor(seconds / 86400) + ' days ago';
+    }
+    
+    // Resume mint from pending tx
+    async function resumeMint(burnTxHash) {
+        hidePendingModal();
+        const pending = getPendingTxs();
+        const tx = pending.find(t => t.burnTxHash === burnTxHash);
+        if (!tx || tx.status !== 'ready_to_mint') {
+            alert('Transaction not ready for mint');
+            return;
+        }
+        
+        // Make sure wallet is connected
+        if (!userAddress) {
+            await connectWallet();
+        }
+        
+        // Set current pending tx and show progress UI
+        currentPendingTx = tx;
+        bridgeDirection = tx.direction;
+        updateNetworkUI();
+        
+        // Show bridge tab and progress
+        $('bridgeTab').click();
+        $('bridgeForm').classList.add('hidden');
+        $('bridgeProgress').classList.remove('hidden');
+        
+        // Set UI state to step 4
+        updateStepStatus('step1', 'completed');
+        updateStepStatus('step2', 'completed');
+        updateStepStatus('step3', 'completed');
+        setProgress(75, 'Attestation ready - click to mint');
+        
+        // Show mint button
+        $('mintReadySection').classList.remove('hidden');
+        $('estimatedTime').classList.add('hidden');
+    }
+    
+    // Check attestation status for a pending tx
+    async function checkAttestation(burnTxHash) {
+        const pending = getPendingTxs();
+        const tx = pending.find(t => t.burnTxHash === burnTxHash);
+        if (!tx) return;
+        
+        try {
+            const url = `${CONFIG.ATTESTATION_API}/${tx.sourceDomain}?transactionHash=${burnTxHash}`;
+            const res = await fetch(url);
+            if (res.ok) {
+                const data = await res.json();
+                if (data?.messages && data.messages.length > 0) {
+                    const message = data.messages[0];
+                    if (message.status === 'complete' && message.attestation) {
+                        // Update to ready
+                        updatePendingTx(burnTxHash, {
+                            status: 'ready_to_mint',
+                            message: message.message,
+                            attestation: message.attestation
+                        });
+                        alert('✅ Attestation ready! You can now complete the mint.');
+                        showPendingModal(); // Refresh modal
+                    } else {
+                        alert(`Status: ${message.status}\nStill waiting for attestation...`);
+                    }
+                } else {
+                    alert('No attestation data found yet. Please wait...');
+                }
+            } else {
+                alert('Error checking attestation. Please try again.');
+            }
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    }
+    
+    // Execute manual mint (called from UI button)
+    async function executeManualMint() {
+        if (!currentPendingTx) {
+            alert('No pending transaction to mint');
+            return;
+        }
+        
+        try {
+            $('mintReadySection').classList.add('hidden');
+            
+            if (currentPendingTx.direction === 'arc-to-sepolia') {
+                await mintOnSepolia(currentPendingTx.message, currentPendingTx.attestation);
+            } else {
+                await mintOnArc(currentPendingTx.message, currentPendingTx.attestation);
+            }
+            
+            // Remove from pending
+            removePendingTx(currentPendingTx.burnTxHash);
+            currentPendingTx = null;
+            
+            setProgress(100, '✅ Bridge completed!');
+            $('successMessage').classList.remove('hidden');
+            setTimeout(resetBridge, 4000);
+        } catch (e) {
+            console.error('Manual mint error:', e);
+            $('errorMessage').classList.remove('hidden');
+            $('errorDetail').textContent = (e?.message || e).slice(0, 2000);
+            $('mintReadySection').classList.remove('hidden');
+        }
+    }
 
     // ======= UI HELPERS =======
     const $ = id => document.getElementById(id);
@@ -477,6 +732,8 @@
     }
     
     async function updateBalanceForDirection() {
+        if (!userAddress || !window.ethereum) return;
+        
         try {
             const sourceConfig = (bridgeDirection === 'arc-to-sepolia') ? CONFIG.ARC : CONFIG.SEPOLIA;
             const targetChainId = sourceConfig.CHAIN_ID_HEX;
@@ -485,12 +742,49 @@
             const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
             
             if (currentChainId !== targetChainId) {
-                // Need to switch to show correct balance
-                $('availableBalance').textContent = 'Switch network to view';
-                $('walletBalance').textContent = 'Connect to ' + sourceConfig.NAME + ' to view balance';
-                return;
+                // Try to switch network
+                $('availableBalance').textContent = 'Switching...';
+                $('walletBalance').textContent = 'Switching to ' + sourceConfig.NAME + '...';
+                
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: targetChainId }]
+                    });
+                } catch (swErr) {
+                    if (swErr.code === 4902) {
+                        // Add chain if not exists
+                        const chainParams = bridgeDirection === 'arc-to-sepolia' ? {
+                            chainId: CONFIG.ARC.CHAIN_ID_HEX,
+                            chainName: CONFIG.ARC.NAME,
+                            rpcUrls: [CONFIG.ARC.RPC],
+                            nativeCurrency: { name:'tUSDC', symbol:'USDC', decimals: 18 },
+                            blockExplorerUrls: [CONFIG.ARC.EXPLORER]
+                        } : {
+                            chainId: CONFIG.SEPOLIA.CHAIN_ID_HEX,
+                            chainName: 'Sepolia Testnet',
+                            rpcUrls: ['https://1rpc.io/sepolia'],
+                            nativeCurrency: { name:'Sepolia ETH', symbol:'ETH', decimals: 18 },
+                            blockExplorerUrls: ['https://sepolia.etherscan.io']
+                        };
+                        await window.ethereum.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [chainParams]
+                        });
+                    } else if (swErr.code === 4001) {
+                        // User rejected
+                        $('availableBalance').textContent = 'Switch network';
+                        $('walletBalance').textContent = 'Please switch to ' + sourceConfig.NAME;
+                        return;
+                    }
+                }
+                
+                // Wait for switch
+                await new Promise(r => setTimeout(r, 500));
+                provider = new ethers.providers.Web3Provider(window.ethereum);
             }
             
+            // Get balance
             provider = new ethers.providers.Web3Provider(window.ethereum);
             const usdcRead = new ethers.Contract(sourceConfig.USDC, USDC_ABI, provider);
             const balRaw = await usdcRead.balanceOf(userAddress);
@@ -499,6 +793,7 @@
             $('walletBalance').textContent = 'Balance on ' + sourceConfig.NAME + ': ' + balPretty + ' USDC';
         } catch (e) {
             console.warn('Error updating balance:', e);
+            $('availableBalance').textContent = '---';
         }
     }
     
@@ -508,6 +803,8 @@
         $('successMessage').classList.add('hidden');
         $('errorMessage').classList.add('hidden');
         $('errorDetail').textContent = '';
+        $('mintReadySection').classList.add('hidden');
+        $('estimatedTime').classList.add('hidden');
     }
 
     // ======= TRACKER =======
@@ -609,50 +906,231 @@ try {
         if (!rawAmount || Number(rawAmount) <= 0) { alert('Please enter a valid amount!'); return; }
         const recipient = userAddress; // Always send to own wallet
 
-        $('bridgeForm').classList.add('hidden'); $('bridgeProgress').classList.remove('hidden');
+        $('bridgeForm').classList.add('hidden'); 
+        $('bridgeProgress').classList.remove('hidden');
+        $('mintReadySection').classList.add('hidden');
+        $('estimatedTime').classList.add('hidden');
+        
+        // Easter egg for developers 🐰
+        console.log('%c From community to community S2 | Arc | ', 'background: linear-gradient(90deg, #9333ea, #6366f1); color: white; padding: 10px 20px; font-size: 14px; font-weight: bold; border-radius: 5px;');
+        
         try {
             setProgress(5, 'Starting bridge...');
             
-            if (bridgeDirection === 'arc-to-sepolia') {
-                // ========== ARC -> SEPOLIA ==========
-                // APPROVE
-                await approveUSDC_Arc(rawAmount);
-                // BURN
-                const burnTxHash = await burnUSDC_Arc(rawAmount, recipient);
-                // ATTESTATION
-                const att = await waitForAttestation(burnTxHash, CONFIG.ARC.DOMAIN);
-                // MINT
-                await mintOnSepolia(att.message, att.attestation);
-            } else {
-                // ========== SEPOLIA -> ARC ==========
-                // APPROVE
-                await approveUSDC_Sepolia(rawAmount);
-                // BURN
-                const burnTxHash = await burnUSDC_Sepolia(rawAmount, recipient);
-                // ATTESTATION
-                const att = await waitForAttestation(burnTxHash, CONFIG.SEPOLIA.DOMAIN);
-                // MINT
-                await mintOnArc(att.message, att.attestation);
-            }
+            let burnTxHash;
+            let sourceDomain;
             
-            setProgress(100, '✅ Bridge completed!');
-            $('successMessage').classList.remove('hidden');
-            setTimeout(resetBridge, 4000);
+            if (bridgeDirection === 'arc-to-sepolia') {
+                // ========== ARC -> SEPOLIA (AUTO-MINT) ==========
+                await approveUSDC_Arc(rawAmount);
+                burnTxHash = await burnUSDC_Arc(rawAmount, recipient);
+                sourceDomain = CONFIG.ARC.DOMAIN;
+                
+                // Save pending transaction (for recovery if needed)
+                const pendingTx = {
+                    burnTxHash,
+                    amount: rawAmount,
+                    direction: bridgeDirection,
+                    sourceDomain,
+                    recipient,
+                    timestamp: Date.now(),
+                    status: 'waiting_attestation'
+                };
+                savePendingTx(pendingTx);
+                
+                // Wait for attestation (original auto-flow)
+                const att = await waitForAttestation(burnTxHash, sourceDomain);
+                
+                // Auto-mint on Sepolia
+                await mintOnSepolia(att.message, att.attestation);
+                
+                removePendingTx(burnTxHash);
+                setProgress(100, '✅ Bridge completed!');
+                $('successMessage').classList.remove('hidden');
+                setTimeout(resetBridge, 4000);
+                
+            } else {
+                // ========== SEPOLIA -> ARC (MANUAL MINT BUTTON) ==========
+                await approveUSDC_Sepolia(rawAmount);
+                burnTxHash = await burnUSDC_Sepolia(rawAmount, recipient);
+                sourceDomain = CONFIG.SEPOLIA.DOMAIN;
+                
+                // Save pending transaction
+                const pendingTx = {
+                    burnTxHash,
+                    amount: rawAmount,
+                    direction: bridgeDirection,
+                    sourceDomain,
+                    recipient,
+                    timestamp: Date.now(),
+                    status: 'waiting_attestation'
+                };
+                savePendingTx(pendingTx);
+                currentPendingTx = pendingTx;
+                
+                // Show estimated time
+                $('estimatedTime').classList.remove('hidden');
+                startEstimatedTimer();
+                
+                // Wait for attestation with manual mint button
+                await waitForAttestationWithButton(burnTxHash, sourceDomain);
+                // User will click the mint button to complete
+            }
         } catch (err) {
             console.error('Bridge error', err);
             $('errorMessage').classList.remove('hidden');
             $('errorDetail').textContent = (err?.message || JSON.stringify(err)).slice(0, 2000);
             setProgress(0, 'Error during process');
-            // show detail to debug
-            setTimeout(resetBridge, 8000);
         }
+    }
+    
+    let timerInterval = null;
+    function startEstimatedTimer() {
+        let seconds = 25 * 60; // 25 minutes estimate
+        if (timerInterval) clearInterval(timerInterval);
+        
+        timerInterval = setInterval(() => {
+            seconds--;
+            if (seconds <= 0) {
+                $('timeRemaining').textContent = 'Any moment now...';
+                return;
+            }
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            $('timeRemaining').textContent = `~${mins}:${secs.toString().padStart(2, '0')}`;
+        }, 1000);
+    }
+    
+    function stopEstimatedTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+    }
+    
+    // Original attestation function (auto-mint for Arc→Sepolia)
+    async function waitForAttestation(txHash, sourceDomain) {
+        setProgress(55, 'Waiting for attestation (Circle Iris API)...');
+        updateStepStatus('step3','pending');
+        const maxAttempts = 180; // 15 minutes
+        let attempts = 0;
+        
+        console.log('Polling attestation for tx:', txHash);
+        console.log('Source domain:', sourceDomain);
+        
+        while (attempts < maxAttempts) {
+            try {
+                const url = `${CONFIG.ATTESTATION_API}/${sourceDomain}?transactionHash=${txHash}`;
+                const res = await fetch(url);
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    
+                    if (data?.messages && data.messages.length > 0) {
+                        const message = data.messages[0];
+                        console.log('Message status:', message.status);
+                        
+                        if (message.status === 'complete' && message.attestation) {
+                            setProgress(75, 'Attestation received ✓');
+                            updateStepStatus('step3','completed');
+                            return { message: message.message, attestation: message.attestation };
+                        } else {
+                            setProgress(55 + (attempts / maxAttempts) * 20, `Status: ${message.status}... (${attempts*5}s)`);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log('Attestation fetch error:', e);
+            }
+            
+            await new Promise(r => setTimeout(r, 5000));
+            attempts++;
+            const progress = 55 + (attempts / maxAttempts) * 20;
+            setProgress(progress, `Waiting for attestation... (${Math.floor(attempts * 5 / 60)}m ${(attempts * 5) % 60}s)`);
+        }
+        
+        updateStepStatus('step3','error');
+        throw new Error('Timeout waiting for attestation.');
+    }
+    
+    // Attestation function with manual mint button (for Sepolia→Arc)
+    async function waitForAttestationWithButton(txHash, sourceDomain) {
+        setProgress(55, 'Waiting for attestation (Circle Iris API)...');
+        updateStepStatus('step3','pending');
+        const maxAttempts = 180; // 15 minutes (5s intervals)
+        let attempts = 0;
+        
+        console.log('Polling attestation for tx:', txHash);
+        console.log('Source domain:', sourceDomain);
+        
+        while (attempts < maxAttempts) {
+            try {
+                const url = `${CONFIG.ATTESTATION_API}/${sourceDomain}?transactionHash=${txHash}`;
+                const res = await fetch(url);
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    
+                    if (data?.messages && data.messages.length > 0) {
+                        const message = data.messages[0];
+                        console.log('Message status:', message.status);
+                        
+                        if (message.status === 'complete' && message.attestation) {
+                            stopEstimatedTimer();
+                            setProgress(75, 'Attestation received ✓');
+                            updateStepStatus('step3','completed');
+                            $('estimatedTime').classList.add('hidden');
+                            
+                            // Update pending tx with attestation data
+                            updatePendingTx(txHash, {
+                                status: 'ready_to_mint',
+                                message: message.message,
+                                attestation: message.attestation
+                            });
+                            
+                            // Update current pending tx
+                            currentPendingTx = {
+                                ...currentPendingTx,
+                                status: 'ready_to_mint',
+                                message: message.message,
+                                attestation: message.attestation
+                            };
+                            
+                            // Show the mint button instead of auto-minting
+                            $('mintReadySection').classList.remove('hidden');
+                            
+                            // Return null - user will click the mint button
+                            return null;
+                        } else {
+                            setProgress(55 + (attempts / maxAttempts) * 20, `Status: ${message.status}... (${attempts*5}s)`);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log('Attestation fetch error:', e);
+            }
+            
+            await new Promise(r => setTimeout(r, 5000));
+            attempts++;
+            const progress = 55 + (attempts / maxAttempts) * 20;
+            setProgress(progress, `Waiting for attestation... (${Math.floor(attempts * 5 / 60)}m ${(attempts * 5) % 60}s)`);
+        }
+        
+        // Timeout - but transaction is saved, user can check later
+        updateStepStatus('step3','error');
+        $('estimatedTime').classList.add('hidden');
+        throw new Error('Timeout waiting for attestation. Your transaction is saved - click "Action needed" to check later.');
     }
 
     function resetBridge() {
         $('bridgeProgress').classList.add('hidden');
         $('bridgeForm').classList.remove('hidden');
         $('bridgeAmount').value = '';
+        $('mintReadySection').classList.add('hidden');
+        $('estimatedTime').classList.add('hidden');
+        stopEstimatedTimer();
         resetProgressUI();
+        currentPendingTx = null;
     }
 
     // ======= STEP 1: APPROVE (ARC) =======
@@ -1157,6 +1635,32 @@ try {
     // init
     resetProgressUI();
     updateNetworkUI(); // Initialize network display
+    updatePendingIndicator(); // Check for pending transactions
+    
+    // Auto-check pending transactions for ready status on page load
+    (async function checkPendingOnLoad() {
+        const pending = getPendingTxs();
+        for (const tx of pending) {
+            if (tx.status === 'waiting_attestation') {
+                try {
+                    const url = `${CONFIG.ATTESTATION_API}/${tx.sourceDomain}?transactionHash=${tx.burnTxHash}`;
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data?.messages?.[0]?.status === 'complete' && data.messages[0].attestation) {
+                            updatePendingTx(tx.burnTxHash, {
+                                status: 'ready_to_mint',
+                                message: data.messages[0].message,
+                                attestation: data.messages[0].attestation
+                            });
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+            }
+        }
+        updatePendingIndicator();
+    })();
+    
     console.log('✅ FluxShift - script loaded', CONFIG);
     </script>
 </body>
