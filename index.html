@@ -839,41 +839,48 @@
             await provider.send('eth_requestAccounts', []);
             signer = provider.getSigner();
             userAddress = await signer.getAddress();
-            // switch to Arc if needed
+            
+            // Determine which network to connect based on bridge direction
+            const targetConfig = (bridgeDirection === 'arc-to-sepolia') ? CONFIG.ARC : CONFIG.SEPOLIA;
+            const targetChainId = targetConfig.CHAIN_ID;
+            const targetChainIdHex = targetConfig.CHAIN_ID_HEX;
+            
+            // Switch to correct network based on direction
             const net = await provider.getNetwork();
-            if (net.chainId !== CONFIG.ARC.CHAIN_ID) {
+            if (net.chainId !== targetChainId) {
                 try {
-                    await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{ chainId: CONFIG.ARC.CHAIN_ID_HEX }] });
+                    await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{ chainId: targetChainIdHex }] });
                 } catch (swErr) {
                     if (swErr.code === 4902) {
+                        // Add network if not exists
+                        const chainParams = (bridgeDirection === 'arc-to-sepolia') ? {
+                            chainId: CONFIG.ARC.CHAIN_ID_HEX,
+                            chainName: CONFIG.ARC.NAME,
+                            rpcUrls: [CONFIG.ARC.RPC],
+                            nativeCurrency: { name:'tUSDC', symbol:'USDC', decimals: 18 },
+                            blockExplorerUrls: [CONFIG.ARC.EXPLORER]
+                        } : {
+                            chainId: CONFIG.SEPOLIA.CHAIN_ID_HEX,
+                            chainName: 'Sepolia Testnet',
+                            rpcUrls: ['https://1rpc.io/sepolia'],
+                            nativeCurrency: { name:'Sepolia ETH', symbol:'ETH', decimals: 18 },
+                            blockExplorerUrls: ['https://sepolia.etherscan.io']
+                        };
                         await window.ethereum.request({
                             method: 'wallet_addEthereumChain',
-                            params: [{
-                                chainId: CONFIG.ARC.CHAIN_ID_HEX,
-                                chainName: CONFIG.ARC.NAME,
-                                rpcUrls: [CONFIG.ARC.RPC],
-                                nativeCurrency: { name:'tUSDC', symbol:'USDC', decimals: 18 },
-                                blockExplorerUrls: [CONFIG.ARC.EXPLORER]
-                            }]
+                            params: [chainParams]
                         });
                     } else throw swErr;
                 }
+                // Wait and refresh provider after switch
+                await new Promise(r => setTimeout(r, 500));
                 provider = new ethers.providers.Web3Provider(window.ethereum);
                 signer = provider.getSigner();
             }
 
-            // detect decimals and USDC balance
-const usdcRead = new ethers.Contract(CONFIG.ARC.USDC, USDC_ABI, provider);
-try {
-    // many ERC-20 USDC implementations expose 6 decimals for token amounts
-    const detected = await usdcRead.decimals();
-    // force ERC-20 USDC behaviour to 6 decimals for approve/parseUnits etc.
-    tokenDecimals = (Number(detected) === 6) ? 6 : 6; // use 6 for ERC-20 USDC interface
-    // NOTE: if you ever need to treat native gas accounting separate from ERC-20 token units,
-    // create a separate var like `erc20Decimals` vs `nativeDecimals`.
-} catch(e) {
-    tokenDecimals = 6; // default to 6 for USDC ERC-20
-}
+            // Get USDC balance for the source network
+            const usdcRead = new ethers.Contract(targetConfig.USDC, USDC_ABI, provider);
+            tokenDecimals = 6; // USDC always 6 decimals
             const balRaw = await usdcRead.balanceOf(userAddress);
             const balPretty = ethers.utils.formatUnits(balRaw, tokenDecimals);
 
@@ -881,7 +888,7 @@ try {
             $('connectWalletBtn').classList.add('hidden');
             $('walletInfo').classList.remove('hidden');
             $('walletAddress').textContent = userAddress;
-            $('walletBalance').textContent = 'Balance (native token): ' + balPretty + ' USDC';
+            $('walletBalance').textContent = 'Balance on ' + targetConfig.NAME + ': ' + balPretty + ' USDC';
             $('availableBalance').textContent = parseFloat(balPretty).toFixed(6);
 
             // Show wallet indicator in top right (abbreviated address)
